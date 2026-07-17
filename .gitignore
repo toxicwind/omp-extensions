@@ -1,0 +1,20 @@
+# deps
+node_modules/
+*.tsbuildinfo
+
+# build outputs
+packages/*/dist/
+
+# logs / env
+*.log
+.env
+.env.*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# omp runtime artifacts
+.worktrees/
+.serena/
