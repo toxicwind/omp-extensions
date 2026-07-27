@@ -66,8 +66,12 @@ export class ManagedConsumer {
 	tail(limit: number, since?: string): KafkaMessageRecord[] {
 		const out: KafkaMessageRecord[] = [];
 		const sinceMs = since ? Date.parse(since) : Number.NaN;
+		// Iterate in reverse to surface the most recent records first. The
+		// loop bound `i >= 0` plus `i < buffer.length` already constrains
+		// the index, so we capture `r` once instead of asserting twice.
 		for (let i = this.buffer.length - 1; i >= 0 && out.length < limit; i--) {
-			const r = this.buffer[i]!;
+			const r = this.buffer[i];
+			if (r === undefined) continue;
 			if (!Number.isNaN(sinceMs) && Date.parse(r.timestamp) < sinceMs) continue;
 			out.unshift(r);
 		}
@@ -132,7 +136,11 @@ export class ManagedConsumer {
 			});
 			this.status = { state: "running", since: Date.now() };
 		} catch (err) {
-			this.status = { state: "error", error: (err as Error).message, since: Date.now() };
+			this.status = {
+				state: "error",
+				error: (err as Error).message,
+				since: Date.now(),
+			};
 			// Best-effort cleanup so a future reload() starts fresh.
 			try {
 				await consumer.disconnect();
@@ -186,7 +194,11 @@ export class ManagedConsumer {
 		}
 	}
 
-	private toRecord(topic: string, partition: number, message: KafkaMessage): KafkaMessageRecord {
+	private toRecord(
+		topic: string,
+		partition: number,
+		message: KafkaMessage,
+	): KafkaMessageRecord {
 		const headers: Record<string, string> = {};
 		for (const [k, v] of Object.entries(message.headers ?? {})) {
 			if (v === undefined) continue;
