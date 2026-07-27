@@ -17,7 +17,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { commitPaths, probeRepo } from "../src/git.ts";
+import { commitPaths, probeRepo, statStagedPaths } from "../src/git.ts";
 import { type EditKind, buildMessage, summarize } from "../src/message.ts";
 
 const DIFF = [
@@ -193,5 +193,45 @@ describe("git + message end-to-end", () => {
 		// And the auto-commit must only have changed `edit-me.ts`.
 		const show = run(h.cwd, ["show", "--name-only", "--format=", "HEAD"]);
 		expect(show.stdout.trim()).toBe("edit-me.ts");
+	});
+
+	test("commitPaths records the deletion half of a rename", async () => {
+		// Regression test: a pure rename has 0/0 in the numstat and
+		// shows up in the diff text as `rename from / rename to`
+		// instead of `+` / `-` lines. The committer must (a) include
+		// both the source and destination in the pathspec and
+		// (b) not skip the commit on the 0/0 stat.
+		const h = useHarness();
+		const source = join(h.cwd, "old-name.ts");
+		const dest = join(h.cwd, "new-name.ts");
+		writeFileSync(source, "export const x = 1;\n");
+		run(h.cwd, ["add", "old-name.ts"]);
+		run(h.cwd, ["commit", "-m", "seed", "--no-verify", "--no-gpg-sign"]);
+		// Move the file: rename on disk.
+		run(h.cwd, ["mv", "old-name.ts", "new-name.ts"]);
+
+		const stat = await statStagedPaths(h.cwd, [source, dest]);
+		expect(stat.hasRename).toBe(true);
+		expect(stat.added).toBe(0);
+		expect(stat.removed).toBe(0);
+
+		const result = await commitPaths(
+			h.cwd,
+			[source, dest],
+			"rename(old-name): new-name\n",
+		);
+		expect(result.sha).not.toBeNull();
+		expect(result.skipped).toBe(false);
+
+		// The commit must show the rename (R), not just the new file (A).
+		const show = run(h.cwd, ["show", "--name-status", "--format=", "HEAD"]);
+		const status = show.stdout.trim().split("\t")[0];
+		expect(status).toMatch(/^R/);
+		expect(show.stdout).toContain("old-name.ts");
+		expect(show.stdout).toContain("new-name.ts");
+		// And the worktree must not still have the old name.
+		const ls = run(h.cwd, ["ls-files"]);
+		expect(ls.stdout).toContain("new-name.ts");
+		expect(ls.stdout).not.toContain("old-name.ts");
 	});
 });

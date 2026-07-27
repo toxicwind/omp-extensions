@@ -137,15 +137,20 @@ export function summarize(
 				if (firstRemoved === null) firstRemoved = line.slice(1).trim();
 			}
 		}
-		// EditToolPerFileResult.op is "create" | "delete" | "update"; the agent
-		// uses "update" for plain edits, so we only treat create/delete as
-		// structural changes (rename uses a separate `move` field).
+		// EditToolPerFileResult.op is "create" | "delete" | "update"; the
+		// agent uses "update" for plain edits AND for renames, so we
+		// only treat create/delete as structural changes. Rename is
+		// signalled by `sourcePath` and handled by the diagram block
+		// downstream — see EditKind "rename".
 		if (f.op === "create" || f.op === "delete") hasStructural = true;
 	}
 	if (details?.op === "create" || details?.op === "delete") {
 		hasStructural = true;
 	}
-
+	// A rename shows up in the event as `op: "update"` plus a
+	// `sourcePath`. Treat it as structural so the Diagram block kicks
+	// in for the file-list scaffold.
+	if (details?.sourcePath) hasStructural = true;
 	return {
 		paths: unique,
 		added,

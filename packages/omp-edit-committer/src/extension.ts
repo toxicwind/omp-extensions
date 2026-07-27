@@ -99,8 +99,9 @@ function pickKind(
 	details: EditToolDetails | undefined,
 ): EditKind {
 	if (toolName === "write") return "write";
-	// `EditToolDetails["op"]` is "create" | "delete" | "update"; rename is
-	// not represented here (rename uses a separate `move` field).
+	// `EditToolDetails["op"]` is "create" | "delete" | "update"; rename
+	// is signalled by `sourcePath` (the pre-move path), not by `op`.
+	if (details?.sourcePath) return "rename";
 	const op = details?.op;
 	if (op === "create" || op === "delete") return op;
 	return "edit";
@@ -148,11 +149,24 @@ function collectPathsFromDetails(
 		Array.isArray(details.perFileResults) &&
 		details.perFileResults.length > 0
 	) {
-		return details.perFileResults.map((p) => p.path);
+		// For multi-file edits each per-file entry can carry its own
+		// `sourcePath` (rename). We must include both the destination
+		// and the source so a `git commit --only -- <paths>` of just
+		// the destinations doesn't drop the deletion half of the rename.
+		return details.perFileResults.flatMap((p) =>
+			p.sourcePath && p.sourcePath !== p.path
+				? [p.sourcePath, p.path]
+				: [p.path],
+		);
 	}
-	if (typeof details.path === "string" && details.path !== "")
-		return [details.path];
-	return [];
+	const out: string[] = [];
+	if (typeof details.sourcePath === "string" && details.sourcePath !== "") {
+		out.push(details.sourcePath);
+	}
+	if (typeof details.path === "string" && details.path !== "") {
+		out.push(details.path);
+	}
+	return out;
 }
 
 export default function editCommitterExtension(pi: ExtensionAPI): void {
@@ -311,7 +325,10 @@ async function runCommit(
 	// actually contains on disk rather than the tool event's possibly
 	// stale view.
 	const stat = await statStagedPaths(cwd, args.paths);
-	if (stat.added === 0 && stat.removed === 0) {
+	// A pure rename (100% similarity) shows up as 0/0 in the numstat
+	// but `stat.hasRename` is true; without the rename-aware check
+	// we'd drop the commit and lose both halves of the move.
+	if (stat.added === 0 && stat.removed === 0 && !stat.hasRename) {
 		debug("paths produced no staged changes; skipping commit", args.paths);
 		return;
 	}

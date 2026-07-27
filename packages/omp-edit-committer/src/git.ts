@@ -56,6 +56,13 @@ export interface PathStat {
 	hunks: number;
 	/** Raw diff text (empty when no changes). */
 	diff: string;
+	/**
+	 * True when at least one path was staged as a rename / move
+	 * (the diff text contains a `rename from` / `rename to` line).
+	 * Renames can show up as `0/0` in the numstat — the committer
+	 * must still create a commit in that case.
+	 */
+	hasRename: boolean;
 }
 
 /** Probe the working tree once per session to avoid spawning `git` per edit. */
@@ -156,9 +163,17 @@ export async function statStagedPaths(
 	cwd: string,
 	paths: string[],
 ): Promise<PathStat> {
-	if (paths.length === 0) return { added: 0, removed: 0, hunks: 0, diff: "" };
-	const add = await run(cwd, ["add", "--", ...paths]);
-	if (add.code !== 0) return { added: 0, removed: 0, hunks: 0, diff: "" };
+	if (paths.length === 0) {
+		return { added: 0, removed: 0, hunks: 0, diff: "", hasRename: false };
+	}
+	// Stage each path with the right verb: `git add` for files that
+	// exist on disk (creates / modifications), `git rm` for files
+	// that have been deleted (the source of a rename is the common
+	// case). A blanket `git add -A -- <paths>` fails on a deleted
+	// source path because git can't match the pathspec against the
+	// (now-gone) file; a blanket `git add -A` (no pathspec) would
+	// sweep the whole worktree and break the per-edit scoping.
+	await stageEach(cwd, paths);
 	const numstat = await run(cwd, [
 		"diff",
 		"--cached",
@@ -178,7 +193,12 @@ export async function statStagedPaths(
 		if (Number.isFinite(rNum)) removed += rNum;
 	}
 	const hunks = (diff.stdout.match(/^@@/gm) ?? []).length;
-	return { added, removed, hunks, diff: diff.stdout };
+	// Pure renames with 100% similarity show up in the diff text as
+	// `rename from <old> / rename to <new>` instead of `+`/`-` lines,
+	// so the numstat counts them as 0/0. The diff text is the only
+	// reliable signal.
+	const hasRename = /^rename (from|to) /m.test(diff.stdout);
+	return { added, removed, hunks, diff: diff.stdout, hasRename };
 }
 
 /**
@@ -196,13 +216,19 @@ export async function commitPaths(
 	if (paths.length === 0) {
 		return { sha: null, skipped: true, reason: "no paths" };
 	}
-	const add = await run(cwd, ["add", "--", ...paths]);
-	if (add.code !== 0) {
+	// Stage each path with the right verb (add vs rm). See
+	// `stageEach` for why a single `git add -A` doesn't work here.
+	const staged = await stageEach(cwd, paths);
+	if (
+		staged.failed.length > 0 &&
+		staged.added.length === 0 &&
+		staged.removed.length === 0
+	) {
 		return {
 			sha: null,
 			skipped: true,
-			reason: "git add failed",
-			stderr: add.stderr,
+			reason: "git stage failed",
+			stderr: staged.failed.map((f) => f.stderr).join("\n"),
 		};
 	}
 	const status = await run(cwd, [
@@ -255,4 +281,67 @@ export async function commitPaths(
 		};
 	}
 	return { sha: shaResult.stdout.trim(), skipped: false };
+}
+
+/**
+ * Stage each path with the right git verb. We can't use a single
+ * `git add -A -- <paths>` because git tries to match the pathspec
+ * against the *worktree* and fails for paths that have been deleted
+ * (the source of a rename). And we can't use a blanket `git add -A`
+ * (no pathspec) because that sweeps the whole worktree, defeating
+ * the per-edit scoping the committer relies on for `--only` to mean
+ * anything.
+ *
+ * The workaround: walk `paths`, check whether each one exists on
+ * disk, and dispatch to `git add` or `git rm` accordingly. The
+ * `git rm` form records the deletion in the index without needing
+ * the file to be present; git then infers the rename from the
+ * similarity with the surviving destination.
+ */
+async function stageEach(
+	cwd: string,
+	paths: string[],
+): Promise<{
+	added: string[];
+	removed: string[];
+	failed: { path: string; stderr: string }[];
+}> {
+	const result = {
+		added: [] as string[],
+		removed: [] as string[],
+		failed: [] as { path: string; stderr: string }[],
+	};
+	for (const p of paths) {
+		const exists = await pathExists(cwd, p);
+		const verb = exists ? "add" : "rm";
+		const r = await run(cwd, [verb, "--", p]);
+		if (r.code === 0) {
+			if (verb === "add") result.added.push(p);
+			else result.removed.push(p);
+		} else {
+			result.failed.push({ path: p, stderr: r.stderr });
+		}
+	}
+	return result;
+}
+
+async function pathExists(cwd: string, path: string): Promise<boolean> {
+	const r = await run(cwd, ["ls-files", "--error-unmatch", "--", path]);
+	// `ls-files --error-unmatch` exits 1 if the path isn't tracked.
+	// For an untracked file that's been created, we also want to
+	// treat it as "exists" so we use `git add` rather than `git rm`.
+	if (r.code === 0) return true;
+	const stat = await run(cwd, [
+		"ls-files",
+		"--others",
+		"--exclude-standard",
+		"--",
+		path,
+	]);
+	if (r.code !== 0 && stat.code === 0 && stat.stdout.trim() !== "") return true;
+	// Fall back to the on-disk stat: the path may not be tracked yet
+	// (e.g. an Edit that created a brand-new file), or git might not
+	// be aware of it for some other reason.
+	const proc = Bun.spawnSync(["test", "-e", path], { cwd });
+	return proc.exitCode === 0;
 }
