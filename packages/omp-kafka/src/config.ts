@@ -18,9 +18,13 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve as resolvePath, isAbsolute } from "node:path";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { ConsumerConfig, KafkaYamlConfig, ResolvedConsumer } from "./types.ts";
+import type {
+	ConsumerConfig,
+	KafkaYamlConfig,
+	ResolvedConsumer,
+} from "./types.ts";
 
 /// Ambient Bun global for typecheck (no @types/bun dependency at runtime).
 declare const Bun: { file(path: string): { text(): Promise<string> } };
@@ -48,7 +52,11 @@ export async function loadConfig(
 	const errors: string[] = [];
 	const source = resolveConfigPath(cwd, env);
 	if (!source) {
-		return { config: [], source: null, errors: ["no kafka.yml found and KAFKA_CONFIG not set"] };
+		return {
+			config: [],
+			source: null,
+			errors: ["no kafka.yml found and KAFKA_CONFIG not set"],
+		};
 	}
 
 	let raw: unknown;
@@ -87,7 +95,9 @@ function resolveConfigPath(cwd: string, env: NodeJS.ProcessEnv): string | null {
 	const candidates: string[] = [];
 	if (env.KAFKA_CONFIG) {
 		candidates.push(
-			isAbsolute(env.KAFKA_CONFIG) ? env.KAFKA_CONFIG : resolvePath(cwd, env.KAFKA_CONFIG),
+			isAbsolute(env.KAFKA_CONFIG)
+				? env.KAFKA_CONFIG
+				: resolvePath(cwd, env.KAFKA_CONFIG),
 		);
 	}
 	candidates.push(resolvePath(cwd, "kafka.yml"));
