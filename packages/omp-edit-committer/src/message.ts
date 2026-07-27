@@ -20,7 +20,12 @@
  *     <ASCII art illustrating the new flow>
  *
  *   Refs: <files>, <+added>/-<removed>, N hunks
- *   hunk: <sha>    (filled by commit() — left blank in the builder)
+ *   hunk: yes   ← marker so reviewers can grep auto-commits at a glance
+ *
+ * The body deliberately does *not* carry the commit's own SHA: a
+ * `git commit --amend` would orphan whatever SHA was embedded. The
+ * live SHA lives in the TUI badge the extension renders directly
+ * under the Edit tool result.
  *
  * The renderer is intentionally pure: no I/O, no git calls. `buildMessage`
  * returns a string and a `MessageMeta` blob the extension uses to render
@@ -375,21 +380,14 @@ export function buildMessage(
 	const diagram = buildDiagram(summary, opts.kind);
 	if (diagram.length > 0) sections.push("Diagram", ...diagram, "");
 	sections.push(buildRefs(summary));
-	// `hunk: <sha>` is a footer modem-dev/hunk can pick up directly to
-	// re-render the diff in its own viewer. The committer fills the SHA
-	// after `git commit` succeeds.
-	sections.push("hunk: ");
+	// Marker so reviewers can grep auto-commits at a glance. The live
+	// SHA lives in the TUI badge, not here — see the file header for
+	// why we don't try to embed it in the body.
+	sections.push("hunk: yes");
 	return {
 		body: `${sections.join("\n").trimEnd()}\n`,
 		subject,
 		kind: opts.kind,
 		summary,
 	};
-}
-
-/** Substitute the SHA into the `hunk:` footer once `git commit` returns. */
-export function fillHunkSha(body: string, sha: string): string {
-	// `[ \t]*` (not `\s*`) so we don't gobble the trailing newline that
-	// separates the footer from the rest of the message.
-	return body.replace(/^hunk:[ \t]*$/m, `hunk: ${sha}`);
 }

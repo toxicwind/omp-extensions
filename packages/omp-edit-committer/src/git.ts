@@ -8,6 +8,30 @@
  *
  * Uses `Bun.spawn` (declared via `@types/bun`) so the package doesn't have
  * to pull in `@types/node`. Bun's spawn is a drop-in for the parts we use.
+ *
+ * # Path-safety invariants
+ *
+ * The helper **never** commits outside the caller-supplied paths. We
+ * achieve this with two complementary rules:
+ *
+ * 1. `git add -- <paths>` only stages the named files.
+ * 2. `git commit --only -- <paths>` only includes the named files in the
+ *    new tree, even if the user had other changes staged or sitting in
+ *    the worktree. `--only` ignores the current index contents and
+ *    refuses to include paths outside the pathspec.
+ *
+ * That second rule is the one the first version of this file got wrong
+ * (a plain `git commit` would have swept in any unrelated staged work
+ * the user happened to have at the moment of an Edit).
+ *
+ * # Why we don't put the SHA in the commit message
+ *
+ * The body advertises a `hunk:` footer so `modem-dev/hunk` reviewers
+ * can spot auto-commits at a glance, but we deliberately do *not*
+ * write the commit's own SHA into that footer. The chicken-and-egg:
+ * a `git commit --amend` rewrites the SHA, so any SHA we wrote
+ * pre-amend would point to an orphaned object. The live SHA lives
+ * in the TUI badge, not in the body.
  */
 
 /** All git subprocesses are bounded so a hung hook can't pin the agent. */
@@ -23,6 +47,15 @@ export interface CommitResult {
 	reason?: string;
 	/** Raw stderr from `git commit` when the commit failed. */
 	stderr?: string;
+}
+
+/** Per-path stat pulled from `git diff --cached --numstat -- <paths>`. */
+export interface PathStat {
+	added: number;
+	removed: number;
+	hunks: number;
+	/** Raw diff text (empty when no changes). */
+	diff: string;
 }
 
 /** Probe the working tree once per session to avoid spawning `git` per edit. */
@@ -112,9 +145,47 @@ export async function probeRepo(cwd: string): Promise<RepoProbe> {
 }
 
 /**
- * Stage a set of paths and create a single commit with the given message.
- * Returns the short SHA on success. When the index has no changes, returns
- * `{ sha: null, skipped: true }` so the caller can render "no commit needed".
+ * Stage `paths` and return the per-path stat from `git diff --cached`.
+ *
+ * Callers use this to drive the commit message builder without having
+ * to ship the diff through the extension's event bus — important for
+ * the `write` tool, which never carries an edit-style diff in its
+ * `tool_result` event.
+ */
+export async function statStagedPaths(
+	cwd: string,
+	paths: string[],
+): Promise<PathStat> {
+	if (paths.length === 0) return { added: 0, removed: 0, hunks: 0, diff: "" };
+	const add = await run(cwd, ["add", "--", ...paths]);
+	if (add.code !== 0) return { added: 0, removed: 0, hunks: 0, diff: "" };
+	const numstat = await run(cwd, [
+		"diff",
+		"--cached",
+		"--numstat",
+		"--",
+		...paths,
+	]);
+	const diff = await run(cwd, ["diff", "--cached", "--", ...paths]);
+	let added = 0;
+	let removed = 0;
+	for (const line of numstat.stdout.split("\n")) {
+		if (line.trim() === "") continue;
+		const [a, r] = line.split("\t");
+		const aNum = Number.parseInt(a ?? "0", 10);
+		const rNum = Number.parseInt(r ?? "0", 10);
+		if (Number.isFinite(aNum)) added += aNum;
+		if (Number.isFinite(rNum)) removed += rNum;
+	}
+	const hunks = (diff.stdout.match(/^@@/gm) ?? []).length;
+	return { added, removed, hunks, diff: diff.stdout };
+}
+
+/**
+ * Stage `paths` and create a single commit constrained to those paths.
+ * Returns the short SHA on success. When nothing is staged for `paths`,
+ * returns `{ sha: null, skipped: true }` so the caller can render
+ * "no commit needed".
  */
 export async function commitPaths(
 	cwd: string,
@@ -134,7 +205,13 @@ export async function commitPaths(
 			stderr: add.stderr,
 		};
 	}
-	const status = await run(cwd, ["status", "--porcelain"]);
+	const status = await run(cwd, [
+		"diff",
+		"--cached",
+		"--name-only",
+		"--",
+		...paths,
+	]);
 	if (status.code !== 0) {
 		return {
 			sha: null,
@@ -146,17 +223,21 @@ export async function commitPaths(
 	if (status.stdout.trim() === "" && !options.allowEmpty) {
 		return { sha: null, skipped: true, reason: "nothing to commit" };
 	}
+	// `--only` ignores any other staged content and refuses to include
+	// paths outside the pathspec, so the commit can never sweep up the
+	// user's unrelated work. The trailing `--` plus pathspec is the
+	// belt-and-braces form of the same guarantee.
 	const commit = await run(cwd, [
 		"commit",
-		"-m",
-		message,
+		"--only",
 		"--no-verify",
 		"--no-gpg-sign",
+		"-m",
+		message,
+		"--",
+		...paths,
 	]);
 	if (commit.code !== 0) {
-		// Common benign cause: a pre-commit hook in the user's repo that we
-		// don't control. Surface stderr so the user can diagnose, but don't
-		// pretend the commit happened.
 		return {
 			sha: null,
 			skipped: false,
@@ -164,14 +245,14 @@ export async function commitPaths(
 			stderr: commit.stderr,
 		};
 	}
-	const sha = await run(cwd, ["rev-parse", "--short", "HEAD"]);
-	if (sha.code !== 0) {
+	const shaResult = await run(cwd, ["rev-parse", "--short", "HEAD"]);
+	if (shaResult.code !== 0) {
 		return {
 			sha: null,
 			skipped: false,
 			reason: "missing HEAD",
-			stderr: sha.stderr,
+			stderr: shaResult.stderr,
 		};
 	}
-	return { sha: sha.stdout.trim(), skipped: false };
+	return { sha: shaResult.stdout.trim(), skipped: false };
 }

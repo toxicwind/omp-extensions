@@ -8,9 +8,10 @@
  *
  * Flow:
  *
- *   tool_call  (edit|write)  ─►  stash { paths, kind, intentHint } by toolCallId
- *   tool_result (edit|write) ─►  summarize diff → buildMessage → git commit
- *                                 → appendEntry ("edit-committer", record)
+ *   tool_call  (edit|write)  ─►  stash { paths, intentHint } by toolCallId
+ *   tool_result (edit|write) ─►  stat via git, build message, commit
+ *                                 (constrained to the target paths),
+ *                                 appendEntry ("edit-committer", record)
  *
  * The committer is conservative: it only acts when
  *
@@ -25,18 +26,22 @@
 import type {
 	EditToolCallEvent,
 	EditToolDetails,
-	EditToolPerFileResult,
 	EditToolResultEvent,
 	ExtensionAPI,
 	ExtensionContext,
 	WriteToolCallEvent,
 	WriteToolResultEvent,
 } from "@oh-my-pi/pi-coding-agent";
-import { type RepoProbe, commitPaths, probeRepo } from "./git.ts";
 import {
+	type RepoProbe,
+	commitPaths,
+	probeRepo,
+	statStagedPaths,
+} from "./git.ts";
+import {
+	type DiffSummary,
 	type EditKind,
 	buildMessage,
-	fillHunkSha,
 	summarize,
 } from "./message.ts";
 import {
@@ -51,7 +56,6 @@ type CommitTool = "edit" | "write";
 
 /** Per-tool-call scratch state, kept off the LLM-facing API surface. */
 interface PendingEdit {
-	kind: EditKind;
 	paths: string[];
 	intentHint?: string;
 }
@@ -90,10 +94,15 @@ function probeFor(cwd: string): Promise<RepoProbe> {
 	return p;
 }
 
-function pickKind(toolName: CommitTool, details: unknown): EditKind {
+function pickKind(
+	toolName: CommitTool,
+	details: EditToolDetails | undefined,
+): EditKind {
 	if (toolName === "write") return "write";
-	const op = (details as { op?: string } | undefined)?.op;
-	if (op === "create" || op === "delete" || op === "rename") return op;
+	// `EditToolDetails["op"]` is "create" | "delete" | "update"; rename is
+	// not represented here (rename uses a separate `move` field).
+	const op = details?.op;
+	if (op === "create" || op === "delete") return op;
 	return "edit";
 }
 
@@ -131,8 +140,9 @@ function extractIntentHint(input: Record<string, unknown>): string | undefined {
 		: undefined;
 }
 
-function collectPathsFromDetails(ev: EditToolResultEvent): string[] {
-	const details = ev.details;
+function collectPathsFromDetails(
+	details: EditToolDetails | undefined,
+): string[] {
 	if (!details) return [];
 	if (
 		Array.isArray(details.perFileResults) &&
@@ -176,7 +186,6 @@ export default function editCommitterExtension(pi: ExtensionAPI): void {
 				: extractWritePaths(input);
 		if (paths.length === 0) return;
 		pending.set(ev.toolCallId, {
-			kind: pickKind(ev.toolName, input),
 			paths,
 			intentHint: extractIntentHint(input),
 		});
@@ -197,21 +206,19 @@ export default function editCommitterExtension(pi: ExtensionAPI): void {
 		}
 
 		const details = ev.toolName === "edit" ? ev.details : undefined;
-		const perFile = details?.perFileResults;
 		// Edit may surface paths inside `details` that weren't in the call
 		// (apply-patch / multi-file). Prefer those when present.
 		const detailsPaths =
-			ev.toolName === "edit" ? collectPathsFromDetails(ev) : [];
+			ev.toolName === "edit" ? collectPathsFromDetails(details) : [];
 		const paths = detailsPaths.length > 0 ? detailsPaths : initial.paths;
 		if (paths.length === 0) return;
 
+		const kind = pickKind(ev.toolName, details);
 		await runCommit(pi, ctx, {
-			toolName: ev.toolName,
-			kind: initial.kind,
+			kind,
 			paths,
 			intentHint: initial.intentHint,
 			details,
-			perFile,
 		});
 	});
 
@@ -229,12 +236,57 @@ export default function editCommitterExtension(pi: ExtensionAPI): void {
 }
 
 interface RunCommitArgs {
-	toolName: CommitTool;
 	kind: EditKind;
 	paths: string[];
 	intentHint: string | undefined;
 	details: EditToolDetails | undefined;
-	perFile: EditToolPerFileResult[] | undefined;
+}
+
+/**
+ * Build the {@link DiffSummary} the message builder consumes.
+ *
+ * The message builder is the only place that knows how to phrase the
+ * Intent / Trade-offs / Diagram sections, but it needs accurate
+ * numbers. We use `git diff --cached` as the source of truth for the
+ * stat (it works for both Edit and Write and never disagrees with the
+ * tree we are about to commit), and `summarize()` for the per-file
+ * metadata Edit already collected.
+ */
+function buildSummary(
+	paths: string[],
+	gitStat: { added: number; removed: number; hunks: number; diff: string },
+	details: EditToolDetails | undefined,
+): DiffSummary {
+	const perFile = details?.perFileResults;
+	const fromEvent = summarize(paths, details, perFile);
+	// `summarize()` parses the per-file / single-file diffs from the
+	// event payload. We then overwrite the stat fields with the
+	// git-derived numbers so the message describes the commit that
+	// is actually about to land (the event's `details.diff` is a
+	// preview and can disagree with the on-disk state in edge cases
+	// like concurrent edits).
+	return {
+		...fromEvent,
+		added: gitStat.added,
+		removed: gitStat.removed,
+		hunks: gitStat.hunks,
+		firstAddedLine: firstLine(gitStat.diff, "+") ?? fromEvent.firstAddedLine,
+		firstRemovedLine:
+			firstLine(gitStat.diff, "-") ?? fromEvent.firstRemovedLine,
+	};
+}
+
+function firstLine(diff: string, prefix: "+" | "-"): string | null {
+	for (const raw of diff.split("\n")) {
+		if (
+			raw.startsWith(prefix) &&
+			!raw.startsWith(`${prefix}++`) &&
+			!raw.startsWith(`${prefix}--`)
+		) {
+			return raw.slice(1).trim();
+		}
+	}
+	return null;
 }
 
 async function runCommit(
@@ -253,16 +305,18 @@ async function runCommit(
 		return;
 	}
 
-	const summary = summarize(args.paths, args.details, args.perFile);
-	if (
-		summary.added === 0 &&
-		summary.removed === 0 &&
-		!summary.hasStructuralChange
-	) {
-		debug("diff produced no lines; skipping commit", args.paths);
+	// Stat the staged paths via git itself. This is the single source
+	// of truth — it works for both Edit (which carries a `details.diff`)
+	// and Write (which never does), and it sees whatever the file
+	// actually contains on disk rather than the tool event's possibly
+	// stale view.
+	const stat = await statStagedPaths(cwd, args.paths);
+	if (stat.added === 0 && stat.removed === 0) {
+		debug("paths produced no staged changes; skipping commit", args.paths);
 		return;
 	}
 
+	const summary = buildSummary(args.paths, stat, args.details);
 	const message = buildMessage(summary, {
 		kind: args.kind,
 		intentHint: args.intentHint,
@@ -272,13 +326,7 @@ async function runCommit(
 		debug("commit skipped:", result.reason, result.stderr);
 		return;
 	}
-	// `git commit` already wrote `message.body` to the object. The `hunk:`
-	// footer is filled with the short SHA only when we amend (e.g. after a
-	// manual fix); for now the committed blob carries the empty footer.
-	// finalBody stays referenced for the future amend flow.
-	const finalBody = fillHunkSha(message.body, result.sha);
 	debug("committed", result.sha, "for", args.paths);
-	void finalBody;
 
 	const record: CommitRecord = makeCommitRecord({
 		sha: result.sha,

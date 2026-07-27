@@ -21,7 +21,9 @@ the agent will have:
    - a **Diagram** section: a small ASCII scaffold for complex diffs
      (multi-file, multi-hunk, create/delete/rename),
    - a **Refs** footer with the file list and `+/-/hunks` counts,
-   - a `hunk: <sha>` footer that `modem-dev/hunk` can pick up directly.
+   - a `hunk: yes` marker footer that lets reviewers grep auto-commits
+     at a glance. The live SHA lives in the TUI badge (see
+     [Trade-offs](#trade-offs) for why it doesn't go in the body).
 2. Rendered a small **commit badge** in the TUI, right below the Edit
    tool result. The badge carries the short SHA, the subject, the stat
    line, and a hint to view the commit with `hunk <sha>`.
@@ -84,7 +86,7 @@ Trade-offs
 - kept the diff shape minimal; no refactor / no rename / no formatting churn
 
 Refs: src/agent/kafka.rs, +3/-1, 1 hunks
-hunk:
+hunk: yes
 ```
 
 For a multi-file refactor, the **Diagram** block is added:
@@ -110,13 +112,37 @@ Edit shape:
 \`\`\`
 
 Refs: src/auth/jwt.ts, src/auth/claims.ts, src/auth/mod.ts, +17/-11, 9 hunks
-hunk:
+hunk: yes
 ```
 
 LLMs can supply a richer intent on the tool call by passing
 `intent: "..."` (or `commit_message: "..."`) on the `Edit` / `Write`
 input. The committer uses that as the source of the Intent section; if
 absent, it falls back to the first added line.
+
+## Trade-offs
+
+A few deliberate non-goals, in case any of them surprise you:
+
+- **`hunk: <sha>` does not go in the commit body.** The body's
+  `hunk:` line is a static marker, not the SHA. We can't embed the
+  post-commit SHA in the message without rewriting the commit (an
+  amend that would orphan whatever SHA we wrote); the live SHA lives
+  in the TUI badge where it's actually useful. Use the badge.
+- **Auto-commits are constrained to the target paths.** The committer
+  uses `git add -- <paths>` followed by `git commit --only -- <paths>`,
+  so a user's pre-existing staged work is never swept into an
+  auto-commit. Tested with a regression test in
+  `scripts/smoke.test.ts`.
+- **The diff stat comes from `git diff --cached`, not from the tool
+  event.** The `write` tool's `tool_result` event carries no diff
+  details, so an event-derived stat would always be `0/0/0` for
+  writes. The committer asks git instead, which sees whatever the
+  file actually contains on disk.
+- **We skip pre-commit hooks and GPG signing.** `--no-verify` so
+  user-installed hooks don't gate every edit; `--no-gpg-sign` so
+  users with GPG on by default don't get prompted. Amends, force
+  pushes, rebases, and pushes are all out of scope.
 
 ## Safety rules
 
@@ -128,15 +154,17 @@ following is true:
   anyway).
 - The Edit/Write tool returned `isError === true` (i.e. the change didn't
   apply).
-- The resulting index has no changes (no empty commits; protects against
-  writes that don't actually mutate the file).
+- The resulting index has no changes for the target paths (no empty
+  commits; protects against writes that don't actually mutate the
+  file).
 - `OMP_EDIT_COMMITTER_DISABLED=1` is set in the environment.
 
 When the committer *does* act, it:
 
-- runs `git add -- <paths> <then> git commit --no-verify --no-gpg-sign -m <message>`,
+- runs `git add -- <paths>` and then `git commit --only --no-verify --no-gpg-sign -m <message> -- <paths>`,
   so any pre-commit hooks in your repo are skipped (they are usually
-  tuned for interactive commit messages, not for a firehose of edits),
+  tuned for interactive commit messages, not for a firehose of edits)
+  and the commit only touches the named paths,
 - never amends, never force-pushes, never rebases,
 - never pushes.
 

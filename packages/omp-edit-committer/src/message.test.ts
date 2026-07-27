@@ -15,7 +15,6 @@ import {
 	type DiffSummary,
 	buildMessage,
 	buildSubject,
-	fillHunkSha,
 	summarize,
 } from "./message.ts";
 
@@ -154,7 +153,7 @@ describe("buildMessage", () => {
 		expect(out.body).toContain("Diagram");
 		expect(out.body).toContain("```");
 		expect(out.body).toContain("Refs: src/a.ts, src/b.ts, +");
-		expect(out.body).toMatch(/^hunk:\s*$/m);
+		expect(out.body).toMatch(/^hunk: yes$/m);
 	});
 
 	test("includes a tradeoff even for a trivial edit", () => {
@@ -177,14 +176,26 @@ describe("buildMessage", () => {
 	});
 });
 
-describe("fillHunkSha", () => {
-	test("substitutes the SHA on the hunk: footer", () => {
-		const out = fillHunkSha("subject\n\nhunk: \n", "abc1234");
-		expect(out).toBe("subject\n\nhunk: abc1234\n");
-	});
-
-	test("leaves existing SHA untouched", () => {
-		const out = fillHunkSha("subject\n\nhunk: deadbeef\n", "abc1234");
-		expect(out).toBe("subject\n\nhunk: deadbeef\n");
+describe("hunk footer", () => {
+	test("emits the static marker, not a SHA", () => {
+		// The body's `hunk:` line is a marker so reviewers can grep
+		// auto-commits. The live SHA lives in the TUI badge (see
+		// message.ts header for why embedding it in the body would
+		// orphan the commit object).
+		const out = buildMessage(
+			{
+				paths: ["src/foo.ts"],
+				added: 1,
+				removed: 0,
+				hunks: 1,
+				hasStructuralChange: false,
+				hasMultiFile: false,
+				hasManyHunks: false,
+				firstAddedLine: "let x = 1;",
+				firstRemovedLine: null,
+			},
+			{ kind: "edit" },
+		);
+		expect(out.body).toMatch(/^hunk: yes$/m);
 	});
 });

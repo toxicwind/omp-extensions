@@ -18,12 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { commitPaths, probeRepo } from "../src/git.ts";
-import {
-	type EditKind,
-	buildMessage,
-	fillHunkSha,
-	summarize,
-} from "../src/message.ts";
+import { type EditKind, buildMessage, summarize } from "../src/message.ts";
 
 const DIFF = [
 	"@@ -12,7 +12,9 @@",
@@ -84,8 +79,6 @@ async function makeHarness(): Promise<Harness> {
 
 describe("git + message end-to-end", () => {
 	let harness: Harness | null = null;
-	// Resolve the harness inside each test. Throws if `beforeEach` was
-	// skipped (i.e. the suite is misconfigured) so the failure is loud.
 	const useHarness = (): Harness => {
 		if (!harness) throw new Error("harness missing — beforeEach did not run");
 		return harness;
@@ -157,7 +150,10 @@ describe("git + message end-to-end", () => {
 		expect(body).toContain("Intent");
 		expect(body).toContain("Trade-offs");
 		expect(body).toContain("Refs: src/lib/foo.ts");
-		expect(body).toMatch(/hunk:\s*$/m);
+		// The body advertises a `hunk: yes` marker, not the SHA. The live
+		// SHA lives in the TUI badge; see message.ts for why we don't try
+		// to embed it in the body.
+		expect(body).toMatch(/^hunk: yes$/m);
 	});
 
 	test("commitPaths is a no-op when the index has no changes", async () => {
@@ -173,8 +169,29 @@ describe("git + message end-to-end", () => {
 		expect(result.reason).toBe("nothing to commit");
 	});
 
-	test("fillHunkSha writes the SHA into the hunk: footer", () => {
-		const out = fillHunkSha("subject\n\nhunk: \n", "deadbeef");
-		expect(out).toContain("hunk: deadbeef");
+	test("commitPaths leaves the user's pre-existing staged work alone", async () => {
+		// Regression test: a plain `git commit` would sweep any unrelated
+		// staged changes into our auto-commit. `git commit --only -- <paths>`
+		// must not.
+		const h = useHarness();
+		const target = join(h.cwd, "edit-me.ts");
+		const staged = join(h.cwd, "user-staged.ts");
+		writeFileSync(target, "v1\n");
+		writeFileSync(staged, "user work\n");
+		run(h.cwd, ["add", "."]);
+		run(h.cwd, ["commit", "-m", "initial", "--no-verify", "--no-gpg-sign"]);
+		// User stages an unrelated file and DOESN'T commit it.
+		writeFileSync(staged, "user work v2\n");
+		run(h.cwd, ["add", "user-staged.ts"]);
+		// Agent edits the target file.
+		writeFileSync(target, "v2\n");
+		const result = await commitPaths(h.cwd, [target], "edit(edit-me): bump\n");
+		expect(result.sha).not.toBeNull();
+		// The user's staged work must still be in the index after our commit.
+		const diff = run(h.cwd, ["diff", "--cached", "--name-only"]);
+		expect(diff.stdout.trim()).toBe("user-staged.ts");
+		// And the auto-commit must only have changed `edit-me.ts`.
+		const show = run(h.cwd, ["show", "--name-only", "--format=", "HEAD"]);
+		expect(show.stdout.trim()).toBe("edit-me.ts");
 	});
 });
