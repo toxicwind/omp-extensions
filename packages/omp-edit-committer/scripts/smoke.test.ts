@@ -1,0 +1,180 @@
+/**
+ * Smoke test: drive the extension end-to-end against a real git repo.
+ *
+ * We can't load the real `omp` runtime here (it owns the TUI / session
+ * machinery), so we exercise the same code paths by:
+ *
+ *   1. Building a temp git repo with a user identity.
+ *   2. Loading the helper modules directly.
+ *   3. Running `commitPaths` with a synthesized commit message.
+ *   4. Asserting the commit landed, the SHA is captured, and the message
+ *      contains the expected sections.
+ *
+ * Run with: `bun test`
+ */
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { commitPaths, probeRepo } from "../src/git.ts";
+import {
+	type EditKind,
+	buildMessage,
+	fillHunkSha,
+	summarize,
+} from "../src/message.ts";
+
+const DIFF = [
+	"@@ -12,7 +12,9 @@",
+	" function foo() {",
+	"-	return old_helper(x);",
+	"+	const y = new_helper(x);",
+	"+	if (!y.ok) throw new Error('nope');",
+	"+	return y.value;",
+	" }",
+	"",
+].join("\n");
+
+interface Harness {
+	cwd: string;
+	toplevel: string;
+	cleanup: () => void;
+}
+
+function run(
+	cwd: string,
+	args: string[],
+): { code: number; stdout: string; stderr: string } {
+	const proc = Bun.spawnSync(["git", ...args], {
+		cwd,
+		env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+	});
+	return {
+		code: proc.exitCode ?? 1,
+		stdout: proc.stdout.toString(),
+		stderr: proc.stderr.toString(),
+	};
+}
+
+async function makeHarness(): Promise<Harness> {
+	const dir = mkdtempSync(join(tmpdir(), "omp-edit-committer-smoke-"));
+	const init = run(dir, ["init", "-q", "-b", "main"]);
+	if (init.code !== 0) throw new Error(`git init failed: ${init.stderr}`);
+	const user = run(dir, ["config", "user.name", "Smoke Test"]);
+	if (user.code !== 0)
+		throw new Error(`git config user.name failed: ${user.stderr}`);
+	const email = run(dir, ["config", "user.email", "smoke@example.com"]);
+	if (email.code !== 0)
+		throw new Error(`git config user.email failed: ${email.stderr}`);
+	const top = run(dir, ["rev-parse", "--show-toplevel"]);
+	if (top.code !== 0) throw new Error(`git rev-parse failed: ${top.stderr}`);
+	return {
+		cwd: dir,
+		toplevel: top.stdout.trim(),
+		cleanup: () => {
+			try {
+				rmSync(dir, { recursive: true, force: true });
+			} catch {
+				// Best effort; tmpdir gets reaped eventually.
+			}
+		},
+	};
+}
+
+describe("git + message end-to-end", () => {
+	let harness: Harness | null = null;
+	// Resolve the harness inside each test. Throws if `beforeEach` was
+	// skipped (i.e. the suite is misconfigured) so the failure is loud.
+	const useHarness = (): Harness => {
+		if (!harness) throw new Error("harness missing — beforeEach did not run");
+		return harness;
+	};
+
+	beforeEach(async () => {
+		harness = await makeHarness();
+	});
+	afterEach(() => {
+		harness?.cleanup();
+		harness = null;
+	});
+
+	test("probeRepo returns insideRepo=true on a fresh repo", async () => {
+		const h = useHarness();
+		const probe = await probeRepo(h.cwd);
+		expect(probe.insideRepo).toBe(true);
+		expect(probe.identityConfigured).toBe(true);
+		expect(probe.toplevel).toBe(h.toplevel);
+	});
+
+	test("commitPaths creates a real commit with the expected message", async () => {
+		const h = useHarness();
+		const target = join(h.cwd, "src", "lib", "foo.ts");
+		mkdirSync(join(h.cwd, "src", "lib"), { recursive: true });
+		writeFileSync(
+			target,
+			"export function foo() {\n\treturn old_helper(x);\n}\n",
+		);
+		run(h.cwd, ["add", "."]);
+		run(h.cwd, ["commit", "-m", "initial", "--no-verify", "--no-gpg-sign"]);
+
+		// Simulate the agent editing the file: write the new content, then
+		// run the committer with the synthesized summary.
+		writeFileSync(
+			target,
+			"export function foo() {\n" +
+				"\tconst y = new_helper(x);\n" +
+				"\tif (!y.ok) throw new Error('nope');\n" +
+				"\treturn y.value;\n" +
+				"}\n",
+		);
+
+		const summary = summarize(
+			["src/lib/foo.ts"],
+			{ diff: DIFF, path: "src/lib/foo.ts" },
+			undefined,
+		);
+		const message = buildMessage(summary, {
+			kind: "edit" as EditKind,
+			intentHint: "swap to failure-aware helper",
+		});
+		const result = await commitPaths(h.cwd, ["src/lib/foo.ts"], message.body);
+		expect(result.sha).not.toBeNull();
+		if (!result.sha) throw new Error("commit did not return a SHA");
+		expect(result.skipped).toBe(false);
+
+		// Verify the commit landed with the right message. We grep the log
+		// rather than compare exact text so the test stays decoupled from
+		// future wording tweaks.
+		const log = run(h.cwd, ["log", "-1", "--format=%H%n%s%n--BODY--%n%b"]);
+		expect(log.code).toBe(0);
+		const [sha, subject, ...rest] = log.stdout.split("\n");
+		const body = rest.join("\n");
+		// `rev-parse --short` is at most 7 chars, so compare against the
+		// matching prefix of the full SHA recorded in the log.
+		expect(sha?.startsWith(result.sha)).toBe(true);
+		expect(subject).toContain("swap to failure-aware helper");
+		expect(body).toContain("Intent");
+		expect(body).toContain("Trade-offs");
+		expect(body).toContain("Refs: src/lib/foo.ts");
+		expect(body).toMatch(/hunk:\s*$/m);
+	});
+
+	test("commitPaths is a no-op when the index has no changes", async () => {
+		const h = useHarness();
+		const target = join(h.cwd, "empty.ts");
+		writeFileSync(target, "noop\n");
+		run(h.cwd, ["add", "empty.ts"]);
+		run(h.cwd, ["commit", "-m", "seed", "--no-verify", "--no-gpg-sign"]);
+		// Don't modify the file; the committer should refuse an empty commit.
+		const result = await commitPaths(h.cwd, ["empty.ts"], "should not land");
+		expect(result.sha).toBeNull();
+		expect(result.skipped).toBe(true);
+		expect(result.reason).toBe("nothing to commit");
+	});
+
+	test("fillHunkSha writes the SHA into the hunk: footer", () => {
+		const out = fillHunkSha("subject\n\nhunk: \n", "deadbeef");
+		expect(out).toContain("hunk: deadbeef");
+	});
+});
