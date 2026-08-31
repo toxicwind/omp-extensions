@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { Kafka } from "kafkajs";
-import { ManagedConsumer } from "../src/consumer.ts";
-import type { ResolvedConsumer } from "../src/types.ts";
+import { ManagedConsumer } from "./../src/consumer.ts";
+import type { ResolvedConsumer } from "./../src/types.ts";
 
 const makeCfg = (overrides?: Partial<ResolvedConsumer>): ResolvedConsumer => ({
 	name: "test",
