@@ -1,93 +1,158 @@
-# omp-extensions
+# omp-kafka
 
-Monorepo of [oh-my-pi (`omp`)](https://github.com/can1357/oh-my-pi) extensions.
+Part of [`RekunDzmitry/omp-extensions`](https://github.com/RekunDzmitry/omp-extensions) — a monorepo of oh-my-pi (`omp`) extensions.
 
-Each subdirectory of [`packages/`](./packages) is itself a valid omp extension package — they ship together because they share the same review pipeline, CI, and `tsconfig`, but install independently.
+An [oh-my-pi (`omp`)](https://github.com/can1357/oh-my-pi) extension that lets an `omp` (or `pi`) instance subscribe to Apache Kafka topics and surface the messages in two ways:
 
-## Extensions
+- **auto (push) mode** — every consumed message is delivered into the running session as a user message (`sendUserMessage`) and shown as a `ctx.ui.notify`, so the LLM can react to it without any explicit request.
+- **pull mode** — messages are buffered silently. The user (or the LLM, via the `kafka_consume` tool) pulls them on demand with `/kafka-tail`, `/kafka`, and `/kafka-reload`.
 
-| Package | Description | Install |
-|---|---|---|
-| [`omp-kafka`](./packages/omp-kafka) | Consume Kafka topics into an omp session in auto (push) or pull mode. | `omp install @rekundzmitry/omp-kafka` |
+The wiring per instance is configured by a single `kafka.yml` file. One repo = many instances, each with its own client ID, topic set, and group ID.
 
-More extensions will land here as `omp-<name>/` siblings.
+```mermaid
+flowchart LR
+    Kafka[Kafka] -->|consume| ext[omp-kafka extension]
+    ext -->|auto: sendUserMessage| s1[omp #1]
+    ext -->|pull: tool / slash cmd| s2[omp #2]
+    ext -->|pull: tool / slash cmd| s3[omp #3]
+```
 
 ## Install
 
-For each extension, see its package README for the full config schema. The short version:
+Requires `omp >= 17.0.0`.
+
+### Option A — clone the monorepo and link
 
 ```bash
-# Production: from npm
-omp install @rekundzmitry/omp-kafka
-
-# Development: from a local clone of this monorepo
-git clone https://github.com/RekunDzmitry/omp-extensions
-cd omp-extensions/packages/omp-kafka
+git clone --depth 1 --filter=blob:none --sparse https://github.com/RekunDzmitry/omp-extensions ~/.omp/agent/extensions/omp-extensions
+cd ~/.omp/agent/extensions/omp-extensions
+git sparse-checkout set packages/omp-kafka
+cd packages/omp-kafka
 bun install
 omp plugin link .
 ```
 
-Each package's `package.json#omp.extensions` lists the factory entry points. omp auto-discovers the rest of the directory (`skills/`, `hooks/`, `tools/`, `prompts/`, `mcp.json`, `themes/`).
+The whole monorepo can be cloned if you want other extensions too — drop `--filter=blob:none --sparse` and the `sparse-checkout` lines.
 
-## Marketplace
-
-A `.omp-plugin/marketplace.json` catalog at the repo root advertises each package:
+### Option B — install via npm (once published)
 
 ```bash
-omp marketplace add RekunDzmitry/omp-extensions
-omp marketplace install omp-kafka@omp-extensions
+bun add -g @rekundzmitry/omp-kafka
 ```
 
-**Note:** Marketplace installs only ship skills, hooks, MCP servers, themes, and prompt templates. Extension factories (`omp.extensions` in `package.json`) are **not** loaded from marketplace installs — they require `omp install <pkg>` or `omp plugin link <dir>`. As of this writing `omp-kafka` is factory-only, so the marketplace catalog exists for future skill/MCP packages.
+Then add to `~/.omp/agent/config.yml`:
 
-## Workspace commands
+```yaml
+extensions:
+  - @rekundzmitry/omp-kafka
+```
 
-From the repo root:
+### Option C — load once for a single session
 
 ```bash
-bun install            # install every package
-bun run typecheck      # tsc -b across all packages
-bun run build          # typecheck + emit (publish flow)
-bun run test           # bun test across all packages
-bun run lint           # biome check
+omp --extension /path/to/omp-extensions/packages/omp-kafka
 ```
 
-Per-package: `cd packages/<name> && bun run typecheck`.
+## Configure
 
-## Repository layout
+Create `kafka.yml` next to your project (or pass `--kafka-config <path>` via `KAFKA_CONFIG` env). The file is a list of consumer profiles, each with its own brokers, topics, group ID, and mode:
 
+```yaml
+# ~/.omp/agent/kafka.yml
+consumers:
+  - name: events
+    mode: auto               # "auto" (push) or "pull"
+    brokers:
+      - localhost:9092
+    clientId: omp-events
+    groupId: omp-events
+    topics:
+      - user.signup
+      - billing.invoice
+    fromBeginning: false
+    notify: true             # also flash a UI notification on each message
+    maxQueue: 500
+    auto:
+      deliverAs: steer       # "steer" or "followUp" (only meaningful in auto mode)
+      prefix: "[kafka:events] "
+
+  - name: ops-pull
+    mode: pull
+    brokers:
+      - kafka.internal:9092
+    topics:
+      - ops.alerts
+    # Everything else falls back to sensible defaults.
 ```
-omp-extensions/
-├── README.md                  # this file
-├── package.json               # bun workspaces root
-├── tsconfig.base.json         # shared compiler options
-├── tsconfig.json              # project references
-├── .github/workflows/ci.yml
-├── .omp-plugin/marketplace.json
-└── packages/
-    ├── omp-kafka/             # @rekundzmitry/omp-kafka
-    └── <future extensions>/
+
+### Field reference
+
+| Field | Default | Notes |
+|---|---|---|
+| `name` | required | Unique per `kafka.yml`. Used in `/kafka-*` commands and `ctx.ui.setStatus`. |
+| `mode` | required | `auto` = push to session; `pull` = buffer only. |
+| `brokers` | required | Non-empty array of `"host:port"` strings. |
+| `topics` | required | Non-empty array of topic names. |
+| `clientId` | `"omp-kafka"` | KafkaJS client ID. |
+| `groupId` | `"omp-kafka-<name>"` | Consumer group. Set explicitly to share with another consumer. |
+| `fromBeginning` | `false` | `false` = latest offset on first connect (good for live tails). |
+| `notify` | `true` | Flash a UI notification for each message (works in both modes). |
+| `maxQueue` | `200` | Ring-buffer size for the in-memory tail. Older records drop off. |
+| `auto.deliverAs` | `"steer"` | How `sendUserMessage` injects: `steer` (current turn) or `followUp` (queued). |
+| `auto.prefix` | `"[kafka:<name>] "` | Prepended to the formatted record body. |
+| `sasl` | unset | `{ mechanism, username, password }` for SASL auth. |
+| `ssl` | `false` | Enable TLS. |
+| `clientConfig` | `{}` | Extra KafkaJS `KafkaConfig` fields. |
+
+### Resolution order
+
+`loadConfig` looks for the config in this order (first hit wins):
+
+1. `$KAFKA_CONFIG` (absolute path wins, otherwise resolved against `cwd`).
+2. `<cwd>/kafka.yml`.
+3. `<cwd>/.omp/kafka.yml`.
+4. `~/.omp/agent/kafka.yml`.
+
+## Slash commands
+
+| Command | Effect |
+|---|---|
+| `/kafka` | List every consumer and its current status. |
+| `/kafka-tail <name> [limit]` | Print the last `limit` records (default 20) from `<name>`'s ring buffer. |
+| `/kafka-drop <name>` | Clear `<name>`'s ring buffer. |
+| `/kafka-reload` | Disconnect every consumer and reconnect (re-reads `kafka.yml`). |
+| `/kafka-pause <name>` | Stop fetching new records (keep the buffer). |
+| `/kafka-resume <name>` | Resume fetching for a paused consumer. |
+
+The status line at the bottom of the TUI mirrors the same info: `kafka: events[auto]=running (12)  ops-pull[pull]=idle`.
+
+## LLM-callable tool
+
+`kafka_consume` is registered automatically. The LLM can call it to peek at the ring buffer without the user invoking a slash command:
+
+```json
+{
+  "name": "kafka_consume",
+  "parameters": {
+    "consumer": "string? — name from kafka.yml",
+    "limit":    "integer 1..500? — default 20",
+    "since":    "ISO 8601 timestamp? — only records after this"
+  }
+}
 ```
 
-## Adding a new extension
+## Environment overrides
 
-1. Create `packages/omp-<name>/` with the standard layout (see [`omp-kafka/`](./packages/omp-kafka) for a working example):
-   ```
-   omp-<name>/
-   ├── package.json            # omp.extensions entry, peer-dep on @oh-my-pi/pi-coding-agent
-   ├── tsconfig.json           # extends ../../tsconfig.base.json
-   ├── README.md
-   └── src/extension.ts        # default factory
-   ```
-2. Add it to `tsconfig.json#references`.
-3. Add a row to the extensions table above and an entry in `.omp-plugin/marketplace.json`.
-4. Open a PR.
+| Variable | Effect |
+|---|---|
+| `KAFKA_DISABLED=1` | Skip connect on startup (config still loads). |
+| `KAFKA_DEBUG=1` | Log lifecycle and connect events to stderr. |
+| `KAFKA_CONFIG=<path>` | Force a specific config file. |
 
-If a second package needs shared code, extract it into `packages/omp-utils/` (private workspace package, not published).
+## Verification
 
-## Migration note
+The package typechecks cleanly and a symlink at `~/.omp/agent/extensions/omp-extensions/packages/omp-kafka` makes omp auto-discover the factory at load.
 
-The first extension, `omp-kafka`, lived in its own repo at
-[`RekunDzmitry/omp-kafka`](https://github.com/RekunDzmitry/omp-kafka) before
-this monorepo was created. That repo is kept for history; new work lands
-here. Users who cloned the old repo should re-clone this one.
+## License
+
+MIT — see [LICENSE](./LICENSE).

@@ -1,23 +1,43 @@
 {
-  "name": "@rekundzmitry/omp-extensions",
+  "name": "@rekundzmitry/omp-kafka",
   "version": "0.1.0",
-  "description": "Monorepo of oh-my-pi (omp) extensions by RekunDzmitry.",
-  "private": true,
+  "description": "oh-my-pi (omp) extension: consume Kafka topics into an omp session in auto (push) or pull mode.",
   "type": "module",
   "license": "MIT",
-  "workspaces": [
-    "packages/*"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RekunDzmitry/omp-extensions.git",
+    "directory": "packages/omp-kafka"
+  },
+  "homepage": "https://github.com/RekunDzmitry/omp-extensions/tree/main/packages/omp-kafka#readme",
+  "bugs": {
+    "url": "https://github.com/RekunDzmitry/omp-extensions/issues"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
   ],
+  "omp": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
   "scripts": {
-    "typecheck": "tsc -b",
-    "build": "tsc -b",
-    "lint": "biome check packages/*/src",
-    "test": "bun test packages/*",
-    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules .tsbuildinfo packages/*/.tsbuildinfo"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "yaml": "^2.9.0",
+    "zod": "^3.23.0"
+  },
+  "peerDependencies": {
+    "@oh-my-pi/pi-coding-agent": "^17.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
     "@oh-my-pi/pi-coding-agent": "^17.0.2",
+    "@types/bun": "latest",
     "typescript": "^5.6.0"
   }
 }
