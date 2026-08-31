@@ -13,9 +13,15 @@
   "bugs": {
     "url": "https://github.com/RekunDzmitry/omp-extensions/issues"
   },
-  "files": ["src", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "omp": {
-    "extensions": ["./src/extension.ts"]
+    "extensions": [
+      "./src/extension.ts"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -24,13 +30,13 @@
   "dependencies": {
     "kafkajs": "^2.2.4",
     "yaml": "^2.9.0",
-    "zod": "^3.23.0"
+    "zod": "^3.25.76"
   },
   "peerDependencies": {
-    "@oh-my-pi/pi-coding-agent": "^17.0.0"
+    "@oh-my-pi/pi-coding-agent": "^18.0.11"
   },
   "devDependencies": {
-    "@oh-my-pi/pi-coding-agent": "^17.0.2",
+    "@oh-my-pi/pi-coding-agent": "^18.0.11",
     "@types/bun": "latest",
     "typescript": "^5.6.0"
   }
