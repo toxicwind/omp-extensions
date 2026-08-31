@@ -24,8 +24,8 @@
     ]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "typecheck": "bun run --workspaces typecheck",
+    "test": "bun run --workspaces test"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",
@@ -39,5 +39,8 @@
     "@oh-my-pi/pi-coding-agent": "^18.0.11",
     "@types/bun": "latest",
     "typescript": "^5.6.0"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }
