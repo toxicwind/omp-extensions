@@ -11,8 +11,8 @@
       },
     },
     "packages/omp-edit-committer": {
-      "name": "@rekundzmitry/omp-edit-committer",
-      "version": "0.1.0",
+      "name": "@toxicwind/omp-edit-committer",
+      "version": "0.2.0",
       "devDependencies": {
         "@oh-my-pi/pi-coding-agent": "^18.0.11",
         "@types/bun": "latest",
@@ -23,8 +23,8 @@
       },
     },
     "packages/omp-kafka": {
-      "name": "@rekundzmitry/omp-kafka",
-      "version": "0.1.0",
+      "name": "@toxicwind/omp-kafka",
+      "version": "0.2.0",
       "dependencies": {
         "kafkajs": "^2.2.4",
         "yaml": "^2.9.0",
@@ -227,11 +227,11 @@
 
     "@puppeteer/browsers": ["@puppeteer/browsers@3.0.6", "", { "dependencies": { "modern-tar": "^0.7.6", "yargs": "^18.0.0" }, "peerDependencies": { "proxy-agent": ">=8.0.1", "yauzl": "^2.10.0 || ^3.4.0" }, "optionalPeers": ["proxy-agent", "yauzl"], "bin": { "browsers": "lib/main-cli.js" } }, "sha512-B/gKoqlFkzhvzsI6jo9K1cZz9o5ypviVv/xu8CwA4grZzyVwN+XfkT+tu8T1zrauuEXv6VhS2oGX+6NL95WcKA=="],
 
-    "@rekundzmitry/omp-edit-committer": ["@rekundzmitry/omp-edit-committer@workspace:packages/omp-edit-committer"],
-
-    "@rekundzmitry/omp-kafka": ["@rekundzmitry/omp-kafka@workspace:packages/omp-kafka"],
-
     "@tailwindcss/node": ["@tailwindcss/node@4.3.3", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "enhanced-resolve": "^5.24.1", "jiti": "^2.7.0", "lightningcss": "1.32.0", "magic-string": "^0.30.21", "source-map-js": "^1.2.1", "tailwindcss": "4.3.3" } }, "sha512-/T8IKEsf9VTU6tLjgC7+sv2mOPtQxzE2jMw7u4Tt40Tx+QSZxpzh95/H6cMKoja9XuW7iMdLJYBB0o9G1CaAgg=="],
+
+    "@toxicwind/omp-edit-committer": ["@toxicwind/omp-edit-committer@workspace:packages/omp-edit-committer"],
+
+    "@toxicwind/omp-kafka": ["@toxicwind/omp-kafka@workspace:packages/omp-kafka"],
 
     "@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 
