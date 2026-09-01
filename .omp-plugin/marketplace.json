@@ -2,12 +2,12 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "omp-extensions",
   "owner": {
-    "name": "RekunDzmitry",
-    "email": "dzmitryrekun@users.noreply.github.com"
+    "name": "toxicwind",
+    "email": "toxicwind@users.noreply.github.com"
   },
   "metadata": {
-    "description": "oh-my-pi (omp) extensions by RekunDzmitry",
-    "version": "0.1.0",
+    "description": "oh-my-pi (omp) extensions by toxicwind",
+    "version": "0.2.0",
     "pluginRoot": "packages",
     "repository": "https://github.com/toxicwind/omp-extensions"
   },
@@ -15,7 +15,7 @@
     {
       "name": "omp-kafka",
       "description": "Consume Kafka topics into an omp session in auto (push) or pull mode. Requires omp install (factory module).",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./omp-kafka",
       "category": "integration",
       "keywords": [
@@ -24,14 +24,14 @@
         "events",
         "extension"
       ],
-      "homepage": "https://github.com/RekunDzmitry/omp-extensions/tree/main/packages/omp-kafka",
+      "homepage": "https://github.com/toxicwind/omp-extensions/tree/main/packages/omp-kafka",
       "license": "MIT",
       "repository": "https://github.com/toxicwind/omp-extensions"
     },
     {
       "name": "omp-edit-committer",
       "description": "Auto-commit every Edit/Write with a descriptive message and surface the SHA in the TUI for use with modem-dev/hunk. Requires omp install (factory module).",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./omp-edit-committer",
       "category": "workflow",
       "keywords": [
@@ -41,7 +41,7 @@
         "review",
         "extension"
       ],
-      "homepage": "https://github.com/RekunDzmitry/omp-extensions/tree/main/packages/omp-edit-committer",
+      "homepage": "https://github.com/toxicwind/omp-extensions/tree/main/packages/omp-edit-committer",
       "license": "MIT",
       "repository": "https://github.com/toxicwind/omp-extensions"
     }
