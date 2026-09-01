@@ -1,6 +1,6 @@
 # omp-kafka
 
-Part of [`RekunDzmitry/omp-extensions`](https://github.com/RekunDzmitry/omp-extensions) — a monorepo of oh-my-pi (`omp`) extensions.
+Part of [`toxicwind/omp-extensions`](https://github.com/toxicwind/omp-extensions) — a monorepo of oh-my-pi (`omp`) extensions.
 
 An [oh-my-pi (`omp`)](https://github.com/can1357/oh-my-pi) extension that lets an `omp` (or `pi`) instance subscribe to Apache Kafka topics and surface the messages in two ways:
 
@@ -24,7 +24,7 @@ Requires `omp >= 17.0.0`.
 ### Option A — clone the monorepo and link
 
 ```bash
-git clone --depth 1 --filter=blob:none --sparse https://github.com/RekunDzmitry/omp-extensions ~/.omp/agent/extensions/omp-extensions
+git clone --depth 1 --filter=blob:none --sparse https://github.com/toxicwind/omp-extensions ~/.omp/agent/extensions/omp-extensions
 cd ~/.omp/agent/extensions/omp-extensions
 git sparse-checkout set packages/omp-kafka
 cd packages/omp-kafka
@@ -37,14 +37,14 @@ The whole monorepo can be cloned if you want other extensions too — drop `--fi
 ### Option B — install via npm (once published)
 
 ```bash
-bun add -g @rekundzmitry/omp-kafka
+bun add -g @toxicwind/omp-kafka
 ```
 
 Then add to `~/.omp/agent/config.yml`:
 
 ```yaml
 extensions:
-  - @rekundzmitry/omp-kafka
+  - @toxicwind/omp-kafka
 ```
 
 ### Option C — load once for a single session
