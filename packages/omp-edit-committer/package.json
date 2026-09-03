@@ -1,32 +1,38 @@
 {
-	"name": "@rekundzmitry/omp-edit-committer",
-	"version": "0.1.0",
-	"description": "oh-my-pi (omp) extension: auto-commit every Edit/Write with a descriptive message (intent, trade-offs, ASCII diagrams) and surface the SHA next to the tool header for use with modem-dev/hunk.",
-	"type": "module",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/RekunDzmitry/omp-extensions.git",
-		"directory": "packages/omp-edit-committer"
-	},
-	"homepage": "https://github.com/RekunDzmitry/omp-extensions/tree/main/packages/omp-edit-committer#readme",
-	"bugs": {
-		"url": "https://github.com/RekunDzmitry/omp-extensions/issues"
-	},
-	"files": ["src", "README.md", "LICENSE"],
-	"omp": {
-		"extensions": ["./src/extension.ts"]
-	},
-	"scripts": {
-		"typecheck": "tsc --noEmit",
-		"test": "bun test"
-	},
-	"peerDependencies": {
-		"@oh-my-pi/pi-coding-agent": "^17.0.0"
-	},
-	"devDependencies": {
-		"@oh-my-pi/pi-coding-agent": "^17.0.2",
-		"@types/bun": "latest",
-		"typescript": "^5.6.0"
-	}
+  "name": "@toxicwind/omp-edit-committer",
+  "version": "0.2.0",
+  "description": "oh-my-pi (omp) extension: auto-commit every Edit/Write with a descriptive message (intent, trade-offs, ASCII diagrams) and surface the SHA next to the tool header for use with modem-dev/hunk.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/toxicwind/omp-extensions.git",
+    "directory": "packages/omp-edit-committer"
+  },
+  "homepage": "https://github.com/toxicwind/omp-extensions/tree/main/packages/omp-edit-committer#readme",
+  "bugs": {
+    "url": "https://github.com/toxicwind/omp-extensions/issues"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "omp": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "@oh-my-pi/pi-coding-agent": "^18.0.11"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "^18.0.11",
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
 }

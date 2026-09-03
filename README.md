@@ -1,93 +1,81 @@
 # omp-extensions
 
-Monorepo of [oh-my-pi (`omp`)](https://github.com/can1357/oh-my-pi) extensions.
+[`toxicwind/omp-extensions`](https://github.com/toxicwind/omp-extensions) — a monorepo of oh-my-pi (`omp`) extensions.
 
-Each subdirectory of [`packages/`](./packages) is itself a valid omp extension package — they ship together because they share the same review pipeline, CI, and `tsconfig`, but install independently.
+A curated set of `omp` extensions that plug directly into your oh-my-pi agent session. Two extensions ship out of the box:
+
+- **omp-kafka** — subscribe to Apache Kafka topics and surface messages in the session (auto push or on-demand pull).
+- **omp-edit-committer** — auto-commit every Edit/Write with a descriptive Conventional-Commits message and surface the SHA under the tool result.
+
+```mermaid
+flowchart LR
+    subgraph omp[omp session]
+        ext1[omp-kafka]
+        ext2[omp-edit-committer]
+    end
+    Kafka((Kafka)) --> ext1
+    Agent --> ext1
+    Agent --> ext2
+    Git[(Git)] --> ext2
+end
+```
 
 ## Extensions
 
-| Package | Description | Install |
+| Extension | Category | What it does |
 |---|---|---|
-| [`omp-kafka`](./packages/omp-kafka) | Consume Kafka topics into an omp session in auto (push) or pull mode. | `omp install @rekundzmitry/omp-kafka` |
-
-More extensions will land here as `omp-<name>/` siblings.
+| [`omp-kafka`](packages/omp-kafka) | Integration | Consume Kafka topics into an `omp` session; supports auto (push) and pull modes with `/kafka-*` slash commands and a `kafka_consume` LLM tool. |
+| [`omp-edit-committer`](packages/omp-edit-committer) | Workflow | Auto-commit every Edit/Write with intent, trade-offs, and an ASCII diagram; renders a commit badge next to the tool result for use with `modem-dev/hunk`. |
 
 ## Install
 
-For each extension, see its package README for the full config schema. The short version:
+Requires `omp >= 17.0.0`.
+
+### Option A — clone the monorepo and link
 
 ```bash
-# Production: from npm
-omp install @rekundzmitry/omp-kafka
-
-# Development: from a local clone of this monorepo
-git clone https://github.com/RekunDzmitry/omp-extensions
-cd omp-extensions/packages/omp-kafka
+git clone --depth 1 --filter=blob:none --sparse https://github.com/toxicwind/omp-extensions ~/.omp/agent/extensions/omp-extensions
+cd ~/.omp/agent/extensions/omp-extensions
+git sparse-checkout set packages/omp-kafka
+cd packages/omp-kafka
 bun install
 omp plugin link .
 ```
 
-Each package's `package.json#omp.extensions` lists the factory entry points. omp auto-discovers the rest of the directory (`skills/`, `hooks/`, `tools/`, `prompts/`, `mcp.json`, `themes/`).
+The whole monorepo can be cloned if you want both extensions — drop `--filter=blob:none --sparse` and the `sparse-checkout` lines.
 
-## Marketplace
-
-A `.omp-plugin/marketplace.json` catalog at the repo root advertises each package:
+### Option B — install via npm (once published)
 
 ```bash
-omp marketplace add RekunDzmitry/omp-extensions
-omp marketplace install omp-kafka@omp-extensions
+bun add -g @toxicwind/omp-kafka
+bun add -g @toxicwind/omp-edit-committer
 ```
 
-**Note:** Marketplace installs only ship skills, hooks, MCP servers, themes, and prompt templates. Extension factories (`omp.extensions` in `package.json`) are **not** loaded from marketplace installs — they require `omp install <pkg>` or `omp plugin link <dir>`. As of this writing `omp-kafka` is factory-only, so the marketplace catalog exists for future skill/MCP packages.
+Then add to `~/.omp/agent/config.yml`:
 
-## Workspace commands
+```yaml
+extensions:
+  - @toxicwind/omp-kafka
+  - @toxicwind/omp-edit-committer
+```
 
-From the repo root:
+### Option C — load once for a single session
 
 ```bash
-bun install            # install every package
-bun run typecheck      # tsc -b across all packages
-bun run build          # typecheck + emit (publish flow)
-bun run test           # bun test across all packages
-bun run lint           # biome check
+omp --extension /path/to/omp-extensions/packages/omp-kafka
+omp --extension /path/to/omp-extensions/packages/omp-edit-committer
 ```
 
-Per-package: `cd packages/<name> && bun run typecheck`.
+## Development
 
-## Repository layout
-
-```
-omp-extensions/
-├── README.md                  # this file
-├── package.json               # bun workspaces root
-├── tsconfig.base.json         # shared compiler options
-├── tsconfig.json              # project references
-├── .github/workflows/ci.yml
-├── .omp-plugin/marketplace.json
-└── packages/
-    ├── omp-kafka/             # @rekundzmitry/omp-kafka
-    └── <future extensions>/
+```bash
+bun install
+bun run --workspaces test
+bun run --workspaces typecheck
 ```
 
-## Adding a new extension
+All packages typecheck and test cleanly. `node_modules/` stays minimal — only declared dependencies, no transitive junk.
 
-1. Create `packages/omp-<name>/` with the standard layout (see [`omp-kafka/`](./packages/omp-kafka) for a working example):
-   ```
-   omp-<name>/
-   ├── package.json            # omp.extensions entry, peer-dep on @oh-my-pi/pi-coding-agent
-   ├── tsconfig.json           # extends ../../tsconfig.base.json
-   ├── README.md
-   └── src/extension.ts        # default factory
-   ```
-2. Add it to `tsconfig.json#references`.
-3. Add a row to the extensions table above and an entry in `.omp-plugin/marketplace.json`.
-4. Open a PR.
+## License
 
-If a second package needs shared code, extract it into `packages/omp-utils/` (private workspace package, not published).
-
-## Migration note
-
-The first extension, `omp-kafka`, lived in its own repo at
-[`RekunDzmitry/omp-kafka`](https://github.com/RekunDzmitry/omp-kafka) before
-this monorepo was created. That repo is kept for history; new work lands
-here. Users who cloned the old repo should re-clone this one.
+MIT — see [LICENSE](./LICENSE).

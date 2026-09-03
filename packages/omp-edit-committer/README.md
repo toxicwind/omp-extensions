@@ -1,6 +1,6 @@
 # omp-edit-committer
 
-Part of [`RekunDzmitry/omp-extensions`](https://github.com/RekunDzmitry/omp-extensions) — a monorepo of oh-my-pi (`omp`) extensions.
+Part of [`toxicwind/omp-extensions`](https://github.com/toxicwind/omp-extensions) — a monorepo of oh-my-pi (`omp`) extensions.
 
 An [oh-my-pi (`omp`)](https://github.com/can1357/oh-my-pi) extension that
 **commits every Edit and Write** the agent performs, with a descriptive
@@ -50,7 +50,7 @@ Requires `omp >= 17.0.0` and a working `git` (any modern version).
 ### Option A — clone the monorepo and link
 
 ```bash
-git clone --depth 1 --filter=blob:none --sparse https://github.com/RekunDzmitry/omp-extensions ~/.omp/agent/extensions/omp-extensions
+git clone --depth 1 --filter=blob:none --sparse https://github.com/toxicwind/omp-extensions ~/.omp/agent/extensions/omp-extensions
 cd ~/.omp/agent/extensions/omp-extensions
 git sparse-checkout set packages/omp-edit-committer
 cd packages/omp-edit-committer
@@ -61,14 +61,14 @@ omp plugin link .
 ### Option B — install via npm (once published)
 
 ```bash
-bun add -g @rekundzmitry/omp-edit-committer
+bun add -g @toxicwind/omp-edit-committer
 ```
 
 Then add to `~/.omp/agent/config.yml`:
 
 ```yaml
 extensions:
-  - @rekundzmitry/omp-edit-committer
+  - @toxicwind/omp-edit-committer
 ```
 
 ## Commit message format

@@ -1,20 +1,40 @@
-# deps
+# Dependencies
 node_modules/
+bun.lockb
+
+# Build / runtime artifacts
+dist/
+build/
 *.tsbuildinfo
+.cache/
+.kafka-cache/
 
-# build outputs
-packages/*/dist/
+# Per-workspace worktrees (this repo owns its own)
+.worktrees/
 
-# logs / env
-*.log
-.env
-.env.*
-
-# editor / OS
+# Editor / OS
 .DS_Store
 .idea/
 .vscode/
+*.swp
+*~
 
-# omp runtime artifacts
-.worktrees/
-.serena/
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local overrides
+.env
+.env.local
+.kafka.local.yml
+
+# Stale cache artifacts (removed)
+src/
+__tests__/
+
+# Unpacked extensions / local test builds
+engram/
+semantouch/
+omp-extensions*

@@ -1,21 +1,27 @@
 {
-  "name": "@rekundzmitry/omp-kafka",
-  "version": "0.1.0",
+  "name": "@toxicwind/omp-kafka",
+  "version": "0.2.0",
   "description": "oh-my-pi (omp) extension: consume Kafka topics into an omp session in auto (push) or pull mode.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/RekunDzmitry/omp-extensions.git",
+    "url": "git+https://github.com/toxicwind/omp-extensions.git",
     "directory": "packages/omp-kafka"
   },
-  "homepage": "https://github.com/RekunDzmitry/omp-extensions/tree/main/packages/omp-kafka#readme",
+  "homepage": "https://github.com/toxicwind/omp-extensions/tree/main/packages/omp-kafka#readme",
   "bugs": {
-    "url": "https://github.com/RekunDzmitry/omp-extensions/issues"
+    "url": "https://github.com/toxicwind/omp-extensions/issues"
   },
-  "files": ["src", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "omp": {
-    "extensions": ["./src/extension.ts"]
+    "extensions": [
+      "./src/extension.ts"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -27,10 +33,10 @@
     "zod": "^3.23.0"
   },
   "peerDependencies": {
-    "@oh-my-pi/pi-coding-agent": "^17.0.0"
+    "@oh-my-pi/pi-coding-agent": "^18.0.11"
   },
   "devDependencies": {
-    "@oh-my-pi/pi-coding-agent": "^17.0.2",
+    "@oh-my-pi/pi-coding-agent": "^18.0.11",
     "@types/bun": "latest",
     "typescript": "^5.6.0"
   }
